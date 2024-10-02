@@ -18,6 +18,47 @@ def advection_upwind(v,T,kurant,h,n):
     
     return new_v,tau
 
+def advetion_central_diff_2(v_orig,T,kurant,h,n):
+    
+    v=copy.copy(v_orig)
+    v_new=[0 for i in v]
+    v_old=copy.copy(v)
+    
+    t=0
+    tau=kurant*h
+    
+    while t<T:
+        t+=tau
+        for i in range(1,n-1):
+            v_new[0]=0
+            v_new[-1]=0
+            v_new[i]=tau*(v[i-1]-v[i+1])/h+v_old[i]
+        v_old=copy.copy(v)
+        v=copy.copy(v_new)
+    return v_new,tau
+
+# def advetion_central_diff_4(v_orig,T,kurant,h,n): #todo
+    
+#     v=copy.copy(v_orig)
+#     v_new=[0 for i in v]
+#     v_old=copy.copy(v)
+    
+#     t=0
+#     tau=kurant*h
+    
+#     while t<T:
+#         t+=tau
+#         for i in range(2,n-2):
+#             v_new[0]=v[0]
+#             v_new[1]=v[1]
+#             v_new[-1]=v[-1]
+#             v_new[-2]=v[-2]
+#             v_new[i]=2*tau*(-v[i-2]/12+2*v[i-1]/3-2*v[i+1]/3+v[i+2]/12)/h+v_old[i]
+#         v_old=copy.copy(v)
+#         v=copy.copy(v_new)
+#     return v_new,tau
+    
+
 
 def generate_data(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=False):
     if CUSTOM_TAU==None:
@@ -100,3 +141,28 @@ def view_results(T_sim,x_sim,NN_sim,v_coarse):
         plt.plot(x_sim,v_coarse[:,time],color='red', label='FACT')
         plt.grid()
         plt.legend()
+        
+        
+        
+# ------------------ Функции для документации----------------
+def view_weights(net):
+    print(len(net.layer))
+    k=0
+    for j in net.layer:
+        k+=1
+        kk=0
+        print(fr'-----{j}------')
+        for i in j.weight:
+            kk+=1
+            kkk=0
+            for ii in i:
+                kkk+=1
+                print(fr'w_{k}{kk}{kkk}',np.round(ii.data.numpy(),4),'\t',end='')
+            print()
+            
+def view_tensor(v_train):
+    print(v_train.shape)
+    for i in range(len(v_train[:].data.numpy())):
+        for j in v_train[i].data.numpy():
+            print(j,end=' ')
+        print()
