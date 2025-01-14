@@ -88,8 +88,8 @@ class MLPConv(nn.Module):
             # nn.init.zeros_(linear.bias)
             
             # linear.weight.data=linear.weight.data*10
-            # dxc=0.05
-            dxc=0.10101010101010102
+            dxc=0.05
+            # dxc=0.10101010101010102
             linear.weight.data=torch.tensor([[1/(dxc),-1/(dxc),0]])
             # linear.weight.data=torch.tensor([[100.,-222.,100.]], requires_grad=True)
 
@@ -688,7 +688,7 @@ def advection_upwind(v,T,kurant,h,n,order=1):
     
     if order==1:
         tau=kurant*h
-        print('tau',tau)
+        # print('tau',tau)
         while t<T:
             t+=tau
             for i in range(1,n):
@@ -718,7 +718,7 @@ def generate_data(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=False):
         print('tau =',tau)
     else:
         tau=CUSTOM_TAU
-    time_lst=[i for i in np.arange(0,T+tau,tau)] #FIRST FIX T->T+tau
+    time_lst=[i for i in np.arange(0,T,tau)] #FIRST FIX T->T+tau
     if generate_flg:
         print('Генерация данных')
         v_fact=[]
@@ -726,6 +726,72 @@ def generate_data(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=False):
             v_fact.append(advection_upwind(v,t,kurant,h,n)[0])
         v=np.array(v)
         v_fact=np.array(v_fact)
+        x_lst=np.linspace(0,L,num=n)
+        
+        #save
+        if save_flg:
+            np.savetxt(fr'data/advection_v_fact_tau={tau}_n={n}.csv',v_fact,delimiter=',')
+
+    else:
+        print('Чтение уже сгенерированных данных')
+        try:
+            v_fact=np.array(pd.read_csv(fr'data/advection_v_fact_tau={tau}_n={n}.csv',header=None))
+            x_lst=np.linspace(0,L,num=n)
+            print('data: Считал с файла')
+        except:
+            print('Нет файла!')
+
+    print(len(v_fact),len(v_fact[0]))
+    v_fact=v_fact.T
+    print(len(v_fact),len(v_fact[0]))
+    
+    return v_fact,x_lst,tau,time_lst
+
+
+### ====== Переписываю функцию, старая возможно генерирует неверно =====
+def advection_upwind_fixe(v,T,kurant,h,n,order=1):
+    ''''
+    1 and 3 order upwind schemes for advection task 
+    '''
+    v=np.array(v)
+    v1=np.array(v)#np.array([0]*len(v))
+    new_v=[]
+    t=0
+    if order==1:
+        tau=kurant*h
+        while t<T:
+            t+=tau
+            for i in range(1,n):
+                # print('i',i)
+                v1[0]=0
+                v1[i]=-(v[i]-v[i-1])/h*tau+v[i]
+            
+            new_v.append(list(v1))
+            v=copy.copy(v1) 
+
+
+    
+    else:
+        raise 'Неверный порядок алгоритма'
+    
+    return new_v,tau
+
+
+def generate_data_fixe(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=False):
+    
+    if CUSTOM_TAU==None:
+        tau=advection_upwind_fixe(v,T,kurant,h,n)[1]
+        print('tau =',tau)
+    else:
+        tau=CUSTOM_TAU
+
+    time_lst=[i for i in np.arange(0,T,tau)] #FIRST FIX T->T+tau
+    if generate_flg:
+        print('Генерация данных')
+        v_fact=advection_upwind_fixe(v,T,kurant,h,n)[0]
+        # print(v_fact)
+        v_fact=np.array(v_fact)
+        # print(v_fact)
         x_lst=np.linspace(0,L,num=n)
         
         #save
