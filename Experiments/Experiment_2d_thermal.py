@@ -97,199 +97,94 @@ def make_param_table(net,my_doc_params,tau,h,n,t_factor,s_factor):
     my_params_dict['fs']=[my_doc_params['fs']]
     
     assert len(my_params_dict)==INITIAL_SHAPE,'Dict length was changed!'
-    
-    
+     
     pd.set_option("display.max_rows", None)
     pd.set_option("max_colwidth", None)
     my_params=pd.DataFrame(my_params_dict).T.reset_index()
     my_params.rename(columns={'index':'Parameter',0:'Value'},inplace=True)
-    my_params#.set_index('Parameter')
+    my_params
     
     return my_params
 
-### ===========================Класс нейронки===========================
+
 class MLPConv(nn.Module):
-    """
-    MLPConv unit for STENCIL-NET.
-    
-    Keyword arguments:
-    sizes -- layer sizes
-    noise -- initial noise estimate for noisy data (default=None)
-    seed -- seed for random network initialization (default=0)
-    fs -- size of filters (default=7)
-    activation -- activation function to be applied after linear transformations (default=torch.nn.ELU())
-    """
-    
     def __init__(self, sizes, noise=None, seed=0, fs=7, activation=nn.ELU()):
         super(MLPConv, self).__init__()
-        
         torch.manual_seed(seed)
         
-        gain = 5/3 if isinstance(activation, nn.Tanh) else 1
-        
-        self.fs    = fs
-        self.sig   = activation
+        gain = 5/3 if isinstance(activation, nn.Tanh) else 10
+        self.fs = fs
+        self.sig = activation
         self.layer = nn.ModuleList()
 
         for i in range(len(sizes)-1):
-            linear = nn.Linear(in_features=sizes[i], out_features=sizes[i+1],bias=True)
-            
-            print("input", sizes[i], "output", sizes[i+1])
-            nn.init.xavier_normal_(linear.weight, gain=gain) #IC заполнение весов нормальны распределением Хавьера
+            linear = nn.Linear(sizes[i], sizes[i+1], bias=True)
+            nn.init.xavier_normal_(linear.weight, gain=gain)
             nn.init.zeros_(linear.bias)
-            
-            linear.weight.data=linear.weight.data*10
-            # dxc=0.05
-            # dxc=0.10101010101010102
-            # linear.weight.data=torch.tensor([[1/(dxc),-1/(dxc),0]])
-            # linear.weight.data=torch.tensor([[100.,-222.,100.]], requires_grad=True)
-
-            # linear.weight.data=torch.tensor([[16.,16.,-64.,16.,16.]])
+            # linear.weight.data = linear.weight.data * 10
+            # linear.weight.data = linear.weight.data * 100
             # linear.weight.data=torch.tensor([[100.,100.,-400.,100.,100.]])
-            # linear.weight.data=torch.tensor([[200.,200.,-800.,200.,200.]])
-            # linear.weight.data=torch.tensor([[2500.,2500.,-10_000.,2500.,2500.]])
-
             self.layer.append(linear)
             
         self.noise = None if noise is None else nn.Parameter(noise, requires_grad=True)
 
-    # def forward(self, x):
-    #     x = self._preprocess(x)
-    #     for i, layer in enumerate(self.layer):
-    #         x = layer(x) # произведение тензора x на тензор весов _preprocess(v_train[:-m]) @ net.layer[0].weight.data.T
-    #         if i < len(self.layer) - 1:
-    #             x = self.sig(x)
-    #     return x.squeeze()
-
     def forward(self, x):
-        # print(x.shape)
-        # print('\n','def_forward_1 :','\n',x)
         x = self._preprocess(x)
-        # print(x)
-        # print(x.shape)
-        # print(x[:,1:-1,:].shape)
-        # x=x[:,1:-1,:]
-        x_copy=x.clone()
-        # print('\n','def_forward_2 :','\n',x)
         for i, layer in enumerate(self.layer):
-            x = layer(x) # произведение тензора x на тензор весов _preprocess(v_train[:-m]) @ net.layer[0].weight.data.T
-            # x = x_copy@layer.weight.data.T
-            # print('\n',fr'def_forward_3_i={i} :',layer.weight)
-            # print('\n',fr'def_forward_4_i={i} :',layer.bias)
-            # print('\n',fr'def_forward_5_i={i} :',x)
-            # print('\n',fr'MY_def_forward_5_i={i} :',x_copy@layer.weight.data.T)
-            # print('\n',fr'MY2_def_forward_5_i={i} :',np.dot(x_copy.detach().numpy(),layer.weight.data.T))
+            x = layer(x)
             if i < len(self.layer) - 1:
-                x_copy2=x.clone()
                 x = self.sig(x)
-                # print('\n',fr'def_forward_6_i={i} :',x)
-                x_copy=self.sig(layer(x_copy))
-        # print('\n','def_forward_7 :','\n',x)
-        # print('\n','def_forward_8 :','\n',x.squeeze())
-        res=x.squeeze()
-        return res
+        return x.squeeze()
 
-    def get_value(self,A,i,j):
-        n=int(np.sqrt(len(A)))
-        if i>=n and j>=n:
-            value = A[i-n+n*j-n]
-        elif i>=n:
-            value = A[i-n+n*j]
-        elif j>=n:
-            value = A[i+(n*j)-n]
+    def get_value(self, A, i, j):
+        n = int(np.sqrt(A.shape[0]))
+        if i >= n and j >= n:
+            idx = i - n + n * j - n
+        elif i >= n:
+            idx = i - n + n * j
+        elif j >= n:
+            idx = i + (n * j) - n
         else:
-            value = A[i+n*j]
-        return value
+            idx = i + n * j
+        return A[idx]
 
-    # def get_value(self,A,i,j):
-    #     n=int(np.sqrt(len(A)))
-    #     if i>=n and j>=n:
-    #         value = A[(n-i)+n*(n-j)] #A[i-n+n*j-n]
-    #     elif i>=n:
-    #         value = A[(n-i)+n*j] #A[i-n+n*j]
-    #     elif j>=n:
-    #         value = A[i+n*(n-j)] #A[i+(n*j)-n]
-    #     else:
-    #         value = A[i+n*j]
-    #     return value
-    
-    def make_px(self,x,ik,jk,n):
+    def make_px(self, x, ik, jk, n):
+        batch_size = x.shape[0]
+        res = torch.zeros((batch_size, n*n), device=x.device)
         
-        # res = x.detach().numpy()
-        res=np.zeros((x.shape[0],n*n))
-        # print(res.shape)
-
-        # print('тест №1_1')
-        # self.get_value(x[0,:].detach().numpy(),1,1)
-        # print('тест №1_2')
-        for t in range(x.shape[0]):
-            temp_arr=[]
+        for t in range(batch_size):
             for i in range(n):
                 for j in range(n):
-                    # temp_arr.append(self.get_value(x[t,:].detach().numpy(),i+ik,j+jk))
-                    temp_arr.append(self.get_value(x[t,:].detach().numpy(),j+ik,i+jk))
-            for i in range(n*n):
-                res[t,i]=temp_arr[i]
-        
-        # print('тест №2')
-        res=torch.tensor(res, dtype=torch.float, device=device)
-        # print('тест №3')
-        res=res.unsqueeze(2)
-        # print('тест №4')
-        return res
+                    # Используем только PyTorch-операции
+                    val = self.get_value(x[t], j+ik, i+jk)
+                    res[t, i*n + j] = val
 
+        return res.unsqueeze(-1)  # [batch, n*n, 1]
+    
     def _preprocess(self, x):
-        """Prepares filters for forward pass."""
-        # print(x.shape)
-        x  = x.unsqueeze(-1) # Добавляет новую размерность в конец
+        x = x.unsqueeze(-1)
         px = x.clone()
-        px = px.detach().numpy()
-        # print(px.shape)
         
-        if self.fs%2!=0:
+        if self.fs % 2 != 0:
+            n = int(np.sqrt(x.shape[1]))
+            px = self.make_px(x, 0, 0, n)
             for i in range(1, int(self.fs/2)+1):
-                # r = torch.roll(x, (-1)*i, 1) # сдвигает значения тензора влево
-                # l = torch.roll(x, i, 1) # сдвигает значения тензора вправо
-                # r2 = torch.roll(x, (-1)*i, 2) # сдвигает значения тензора влево
-                # l2 = torch.roll(x, i, 2) # сдвигает значения тензора вправо
-                n=int(np.sqrt(x.shape[1]))#+1
-                # print(np.sqrt(len(x)))
-                # print(n)
-
-                # print('done_1')
-                px=self.make_px(x,0,0,n)
-                l=self.make_px(x,-1,0,n)
-                r=self.make_px(x,1,0,n)
-                l2=self.make_px(x,0,-1,n)
-                r2=self.make_px(x,0,1,n)
-                # print('done_2')
-
-                # print(l)
-                # print(l2)
-                # print(px)
-                # print(r)
-                # print(r2)
-
-                # print(len(px),len(l),len(l2),len(r),len(r2))            
-                px = torch.cat([l,l2, px, r,r2], -1) # объединяет 3 тензора
+                l = self.make_px(x, -i, 0, n)
+                r = self.make_px(x, i, 0, n)
+                l2 = self.make_px(x, 0, -i, n)
+                r2 = self.make_px(x, 0, i, n)
+                px = torch.cat([l, l2, px, r, r2], -1)
                 
-                # print(px)
-
-        elif self.fs%2==0 and self.fs!=0:
+        elif self.fs % 2 == 0 and self.fs != 0:
             for i in range(1, int((self.fs+1)/2)+1):
-                r = torch.roll(x, (-1)*i, 1) # сдвигает значения тензора влево
-                l = torch.roll(x, i, 1) # сдвигает значения тензора вправо
-                # px=torch.zeros(px.shape)
-                px = torch.cat([l, px, r], -1) # объединяет 3 тензора
-                # px = torch.cat([l, r], -1)
-
-            new_indexes=[i for i in range(int(self.fs/2))]+[i for i in range(int(self.fs/2)+1,self.fs+1)]
-            # print('px_shape',px.shape)
-            px=px[:,:,new_indexes]
-            # print('px_shape',px.shape)
-
+                r = torch.roll(x, (-1)*i, 1)
+                l = torch.roll(x, i, 1)
+                px = torch.cat([l, px, r], -1)
+            new_indexes = list(range(int(self.fs/2))) + list(range(int(self.fs/2)+1, self.fs+1))
+            px = px[:,:,new_indexes]
+            
         else:
-            raise "Non-correct 'fs' parameter"
+            raise ValueError("Incorrect 'fs' parameter")
 
         return px
 
@@ -469,6 +364,16 @@ def backward_rk3_error(net, target, dt, m, wd, fc=None, fc_0m5=None, fc_m1=None,
     
     return torch.mean(res)
 
+def drop_boundary_points1(A_mat):
+    n = int(np.sqrt(A_mat.shape[0]))
+    boundary_id = [i + j*n for i in range(n) for j in range(n) if i == 0 or j == 0]
+    return sorted(boundary_id)
+
+def drop_boundary_points2(A_mat):
+    n = int(np.sqrt(A_mat.shape[0]))
+    boundary_id = [i + j*n for i in range(n) for j in range(n) if i == n-1 or j == n-1]
+    return sorted(boundary_id)
+
 #my        
 def forward_rk1_error(net, target, dt, m, wd, 
                       fc=None, fc_0p5=None, fc_p1=None,
@@ -492,6 +397,8 @@ def forward_rk1_error(net, target, dt, m, wd,
     # initialize noise and compute clean signal based on estimate
     noise  = torch.zeros_like(target) if net.noise is None else net.noise
     pred   = target - noise
+
+    target_orig=target.clone()
     
     # initialize forcing terms
     fc     = fc if fc is not None else torch.zeros_like(target)
@@ -503,45 +410,54 @@ def forward_rk1_error(net, target, dt, m, wd,
     
         # initialize residual and tensor to be predicted
         res    = torch.zeros_like(pred[0:-m,:])
+        res_2    = torch.zeros_like(pred[0:-m,:])
         p_old  = pred[0:-m,:].clone()
-        
+
+        dbc1=drop_boundary_points1(p_old[0,:])
+        dbc2=drop_boundary_points2(p_old[0,:])
+
+        # Создаем маску для boundary points
+        mask3 = torch.ones_like(res_2[:,:], dtype=torch.bool)
+        mask3[:,dbc1] = False
+        mask3[:,dbc2] = False
+        res_2=res_2[mask3]
+
         j=0
-        for j in range(m-1):
-            p_new=p_old[:,:]+dt*net(p_old)+ dt * fc[j:-m+j,:]
+        # !!!TODO
+        # for j in range(m-1):
+            # print('-----------------CYCLE----------------')
+            # p_new=p_old[:,:]+dt*net(p_old)+ dt * fc[j:-m+j,:]
 
-            dbc1=drop_boundary_points1(p_new)
-            dbc2=drop_boundary_points2(p_new)
-            p_new[dbc1][:]=bc_values[0]
-            p_new[dbc2][:]=bc_values[-1]
+        #     dbc1=drop_boundary_points1(p_new)
+        #     dbc2=drop_boundary_points2(p_new)
+        #     p_new[dbc1][:]=bc_values[0]
+        #     p_new[dbc2][:]=bc_values[-1]
 
-            p_new=p_old[:,:]+dt*(net(p_old)+ fc[j:-m+j,:])
-            target_slice=np.delete(target, list(set(dbc1+dbc2)), axis=0)
-            p_new_slice=np.delete(p_new, list(set(dbc1+dbc2)), axis=0)
+        #     p_new=p_old[:,:]+dt*(net(p_old)+ fc[j:-m+j,:])
+        #     target_slice=np.delete(target, list(set(dbc1+dbc2)), axis=0)
+        #     p_new_slice=np.delete(p_new, list(set(dbc1+dbc2)), axis=0)
             
-            res   = res + wd[j+1]*((target_slice[j+1:-m+j+1,:] - (p_new_slice[:,:] ))**2) #+ noise[j+1:-m+j+1,:]
-            p_old=p_new
+        #     res   = res + wd[j+1]*((target_slice[j+1:-m+j+1,:] - (p_new_slice[:,:] ))**2) #+ noise[j+1:-m+j+1,:]
+        #     p_old=p_new
         
         p_new=p_old[:,:]+dt*(net(p_old)+ fc[j:-m+j,:])
-        dbc1=drop_boundary_points1(p_new)
-        dbc2=drop_boundary_points2(p_new)
-        p_new[dbc1][:]=bc_values[0]
-        p_new[dbc2][:]=bc_values[-1]
+        p_new[:,dbc1]=bc_values[0]
+        p_new[:,dbc2]=bc_values[-1]
         
-        # print('done_1')
-        p_new_slice=np.delete(p_new.detach().numpy(), list(set(dbc1+dbc2)), axis=0)
-        p_new_slice=torch.tensor(p_new_slice)
+        # Создаем маску для boundary points
+        mask = torch.ones_like(p_new[:,:], dtype=torch.bool)
+        mask[:,dbc1] = False
+        mask[:,dbc2] = False
 
-        target_slice=np.delete(target.detach().numpy(), list(set(dbc1+dbc2)), axis=0)
-        target_slice=torch.tensor(target_slice)
-        # print('done_2')
+        # Создаем маску для boundary points
+        mask2 = torch.ones_like(target[m:,:], dtype=torch.bool)
+        mask2[:,dbc1] = False
+        mask2[:,dbc2] = False
 
-        # print(p_new_slice.shape, target_slice.shape,res.shape)
-        res=np.delete(res.detach().numpy(), list(set(dbc1+dbc2)), axis=0)
-        res = torch.tensor(res)
-        # print('done_3')
+        res_2=res_2 + wd[m]*((target_orig[m:,:][mask2]-p_new[mask])**2)
 
-        res   = res + wd[m]*((target_slice[m:,:] - (p_new_slice[:,:] ))**2) 
-        # print('done')
+        # print(torch.mean(res),torch.mean(res_2))
+
     elif bc_type=='periodic':
     
         # initialize residual and tensor to be predicted
@@ -558,34 +474,11 @@ def forward_rk1_error(net, target, dt, m, wd,
         res   = res + wd[m]*((target[m:,:] - (p_new[:,:] ))**2) 
     else:
         raise AssertionError('This bc_type didnt exist!')
-    
-    return torch.mean(res)
 
-def drop_boundary_points1(A_mat):
+    # return torch.mean(res)
+    return torch.mean(res_2)
 
-    try:
-        A=A_mat.detach().numpy()
-    except:
-        A=A_mat.copy()
 
-    n=int(np.sqrt(len(A)))
-    
-    boundary_id=[i+j*n for i in range(n) for j in range(n) if i==0 or j==0 ]
-
-    return sorted(boundary_id)
-
-def drop_boundary_points2(A_mat):
-
-    try:
-        A=A_mat.detach().numpy()
-    except:
-        A=A_mat.copy()
-
-    n=int(np.sqrt(len(A)))
-    
-    boundary_id=[i+j*n for i in range(n) for j in range(n)  if i==n-1 or j==n-1]
-
-    return sorted(boundary_id)
 
 #my
 def backward_rk1_error(net, target, dt, m, wd, 
@@ -661,6 +554,7 @@ def backward_rk1_error(net, target, dt, m, wd,
             p_old = p_new   
     else:
         raise AssertionError('This bc_type didnt exist!')
+
     return torch.mean(res)
 
 
@@ -704,7 +598,7 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
     FS2 = 5
 
     v_train = torch.tensor(v_coarse_train.T, requires_grad=True, dtype=torch.float, device=device)
-    print("v_train",v_train.shape)
+    print("v_train",v_train.shape,v_train.requires_grad)
 
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -774,7 +668,9 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
             W = W.view(W.shape[0]*W.shape[1], -1)
             res_w = res_w + (torch.norm(W, p=2, dim=0)**2)
 
-        loss =  fwd #+ bwd +0.0*res_w #l_wd*res_w
+        loss =  fwd #+ bwd #+ 0.0*res_w #l_wd*res_w
+
+        # print(loss)
 
 
         # loss_lst.append([fwd.cpu().data.numpy(),bwd.cpu().data.numpy(),
@@ -783,11 +679,11 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
         loss.backward()
 
         # Проверка градиентов:
-        for name, param in net.named_parameters():
-            if param.grad is not None:
-                print(name, param.grad.abs().sum().item())
-            else:
-                print(name, "None")
+        # for name, param in net.named_parameters():
+        #     if param.grad is not None:
+        #         print(name, param.grad.abs().sum().item())
+        #     else:
+        #         print(name, "None")
 
         optimizer.step()
 
