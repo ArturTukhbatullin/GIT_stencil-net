@@ -70,19 +70,55 @@ def advetion_central_diff(v_orig,T,kurant,h,n,order=2):
     
 
 
-def generate_data(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=False):
+# def generate_data(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=False):
+#     if CUSTOM_TAU==None:
+#         tau=advection_upwind(v,T,kurant,h,n)[1]
+#     else:
+#         tau=CUSTOM_TAU
+#     time_lst=[i for i in np.arange(0,T,tau)]
+#     if generate_flg:
+#         print('Генерация данных')
+#         v_fact=[]
+#         for t in tqdm(time_lst):
+#             v_fact.append(advection_upwind(v,t,kurant,h,n)[0])
+#         v=np.array(v)
+#         v_fact=np.array(v_fact)
+#         x_lst=np.linspace(0,L,num=n)
+        
+#         #save
+#         if save_flg:
+#             np.savetxt(fr'data/advection_v_fact_tau={tau}_n={n}.csv',v_fact,delimiter=',')
+
+#     else:
+#         print('Чтение уже сгенерированных данных')
+#         try:
+#             v_fact=np.array(pd.read_csv(fr'data/advection_v_fact_tau={tau}_n={n}.csv',header=None))
+#             x_lst=np.linspace(0,L,num=n)
+#             print('data: Считал с файла')
+#         except:
+#             print('Нет файла!')
+
+#     print(len(v_fact),len(v_fact[0]))
+#     v_fact=v_fact.T
+#     print(len(v_fact),len(v_fact[0]))
+    
+#     return v_fact,x_lst,tau,time_lst
+
+def generate_data_fixe(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=False):
+    
     if CUSTOM_TAU==None:
         tau=advection_upwind(v,T,kurant,h,n)[1]
+        print('tau =',tau)
     else:
         tau=CUSTOM_TAU
-    time_lst=[i for i in np.arange(0,T,tau)]
+
+    time_lst=[i for i in np.arange(0,T,tau)] #FIRST FIX T->T+tau
     if generate_flg:
         print('Генерация данных')
-        v_fact=[]
-        for t in tqdm(time_lst):
-            v_fact.append(advection_upwind(v,t,kurant,h,n)[0])
-        v=np.array(v)
+        v_fact=advection_upwind(v,T,kurant,h,n)[0]
+        # print(v_fact)
         v_fact=np.array(v_fact)
+        # print(v_fact)
         x_lst=np.linspace(0,L,num=n)
         
         #save
