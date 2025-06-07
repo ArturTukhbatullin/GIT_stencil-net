@@ -90,7 +90,7 @@ class MLPConv(nn.Module):
             # linear.weight.data=linear.weight.data*10
             dxc=0.05
             # dxc=0.10101010101010102
-            linear.weight.data=torch.tensor([[1/(dxc),-1/(dxc),0]])
+            # linear.weight.data=torch.tensor([[1/(dxc),-1/(dxc),0]])
             # linear.weight.data=torch.tensor([[100.,-222.,100.]], requires_grad=True)
 
             self.layer.append(linear)
@@ -421,7 +421,10 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
               m,
               has_backward,
               method,
-              decay_const
+              decay_const,
+              verbose=False,
+              verbose_step=100,
+              continue_fitting=None
              ):
     
     v_train = torch.tensor(v_coarse_train.T, requires_grad=True, dtype=torch.float, device=device)
@@ -491,10 +494,20 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
                          l_wd*res_w.cpu().data.numpy()[0],loss.cpu().data.numpy()[0]])
 
         loss.backward()
-        # optimizer.step()
+        optimizer.step()
 
         if epoch > 15_000:
             scheduler.step()
+
+        if verbose==True:
+            if continue_fitting!=None:
+                if (continue_fitting[1]+epoch)%verbose_step==0:
+                    print(fr'Веса после {continue_fitting[1]+epoch} эпохи:')
+                    print(W)
+            else:
+                if (epoch)%verbose_step==0:
+                    print(fr'Веса после {epoch} эпохи:')
+                    print(W)
 
         pbar.set_postfix(loss=round(loss.item(), 7))
 
@@ -575,13 +588,13 @@ def plot_err_and_components_of_err(loss_lst:np.array):
     pass
 
 def view_results(T_sim,x_sim,NN_sim,v_coarse,T,dtc,
-n=5,
-epochs="",
-fix_axes=False,
-save_path=None,
-save_name=None,
-view_flag=True
-):
+        n=5,
+        epochs="",
+        fix_axes=False,
+        save_path=None,
+        save_name=None,
+        view_flag=True
+        ):
     time_lst=[int(i) for i in np.linspace(0,T_sim-2,n)]
     fact_time=np.round(np.arange(0,T+dtc,dtc),4)
     for t in time_lst:
@@ -614,7 +627,15 @@ def make_gif(folder,epochs):
 
 
         
-def view_result_imshow(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2):
+def view_result_imshow(NN_sim,v_coarse,T,dtc,L,dxc,
+                       figsize=(7,6),
+                       n_xticks=2,n_tticks=2,
+                       v_min_diff=-1,
+                       v_max_diff=1,
+                       save_path='./',
+                       save_name='imshow_default_name',
+                       aspect=1.8,
+                       shrink=0.5):
     
     pre_x=[i for i in range(v_coarse.shape[1])]
     pre_y=[i for i in range(v_coarse.shape[0])]
@@ -623,38 +644,47 @@ def view_result_imshow(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2):
 
     plt.figure(figsize=figsize)
     plt.title("Real data")
-    plt1=plt.imshow(v_coarse,cmap='seismic', aspect=1.8)
+    plt1=plt.imshow(v_coarse,cmap='coolwarm', aspect=aspect)
     plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
-    plt.colorbar(orientation='horizontal')
+    plt.colorbar(orientation='vertical',shrink=shrink)
     plt.xlabel('t')
     plt.ylabel('x')
-    plt.xticks(pre_x[1::n_xticks],fact_time[1::n_xticks])
-    plt.yticks(pre_y,fact_x)
+    plt.xticks(pre_x[0::n_tticks],fact_time[0::n_tticks])
+    plt.yticks(pre_y[0::n_xticks],fact_x[0::n_xticks])
     plt.xticks(rotation=70)
+    if save_path!=None and save_name!=None:
+            plt.savefig(save_path+'/'+save_name+'1.png')
     plt.show()
+
+    
 
     plt.figure(figsize=figsize)
     plt.title("Net data")
-    plt.imshow(NN_sim,cmap='seismic', aspect=1.8)
+    plt.imshow(NN_sim,cmap='coolwarm', aspect=aspect)
     plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
-    plt.colorbar(orientation='horizontal')
+    plt.colorbar(orientation='vertical',shrink=shrink)
     plt.xlabel('t')
     plt.ylabel('x')
-    plt.xticks(pre_x[1::n_xticks],fact_time[1::n_xticks])
-    plt.yticks(pre_y,fact_x)
+    plt.xticks(pre_x[0::n_tticks],fact_time[0::n_tticks])
+    plt.yticks(pre_y[0::n_xticks],fact_x[0::n_xticks])
     plt.xticks(rotation=70)
+    if save_path!=None and save_name!=None:
+            plt.savefig(save_path+'/'+save_name+'2.png')
     plt.show()
 
     plt.figure(figsize=figsize)
     plt.title("Error data")
-    plt.imshow(v_coarse-NN_sim,cmap='seismic', aspect=1.8)
+    plt.imshow(v_coarse-NN_sim,cmap='coolwarm', aspect=aspect)
     plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
-    plt.colorbar(orientation='horizontal')
+    cbar3=plt.colorbar(orientation='vertical',shrink=shrink)
+    cbar3.mappable.set_clim(vmin=v_min_diff, vmax=v_max_diff)
     plt.xlabel('t')
     plt.ylabel('x')
-    plt.xticks(pre_x[1::n_xticks],fact_time[1::n_xticks])
-    plt.yticks(pre_y,fact_x)
+    plt.xticks(pre_x[0::n_tticks],fact_time[0::n_tticks])
+    plt.yticks(pre_y[0::n_xticks],fact_x[0::n_xticks])
     plt.xticks(rotation=70)
+    if save_path!=None and save_name!=None:
+            plt.savefig(save_path+'/'+save_name+'3.png')
     plt.show()
         
 
@@ -676,6 +706,53 @@ def view_result_metric(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2,
     plt.grid()
     if save_path!=None and save_name!=None:
         plt.savefig(save_path+'/'+save_name+'.png')
+    plt.show()
+
+
+def make_subplot_graphs(NN_sim, v_coarse, x_sim, T_sim, T, dtc, n, nx=2, ny=2,
+                        figsize=(12,8),
+                        save_flg=False,
+                        save_path='/.',
+                        save_name='SUBPLOT'):
+    """
+    Строит графики на сетке 2x2 для заданных данных.
+
+    Parameters:
+    - NN_sim: массив симуляций (например, от нейронной сети).
+    - v_coarse: массив грубых данных для сравнения.
+    - x_sim: массив значений x.
+    - T_sim: общее количество временных шагов.
+    - T: конечное время.
+    - dtc: шаг по времени.
+    - n: количество временных шагов для отображения (должно быть кратно 4).
+    - nx: количество строк в сетке (по умолчанию 2).
+    - ny: количество столбцов в сетке (по умолчанию 2).
+    """
+    # if n % (nx * ny) != 0:
+        # raise AssertionError(f"n должно быть кратно {nx * ny} (размеру сетки сабплотов)")
+
+    # time_lst = [int(i) for i in np.linspace(0, T_sim - 1, n)]
+    # fact_time = np.round(np.arange(0, T + dtc, dtc), 4)
+    
+    fact_time=np.arange(0,T+dtc,dtc)
+    time_lst=[int(i) for i in range(len(fact_time)) if fact_time[i] in [0,0.25,0.5,0.8]]
+
+
+    fig, axes = plt.subplots(nx, ny, figsize=figsize)
+    axes = axes.flatten()  # Преобразуем в 1D-массив для удобства итерации
+
+    for t, ax in zip(time_lst, axes):
+        ax.set_title(fr't={fact_time[t]}')
+        ax.plot(x_sim, NN_sim[:, t], '-o', color='blue', label='STENCIL-NET')
+        ax.plot(x_sim, v_coarse[:, t], '--*', color='red', label='Конечно-разностная схема')
+        ax.grid()
+        ax.set_xlabel('x')
+        ax.set_ylabel('T')
+        ax.legend(loc='upper right')
+
+    plt.tight_layout()
+    if save_flg:
+        plt.savefig(save_path+save_name+'.png')
     plt.show()
 
 ### ===========================Функции из задачи теплопроводности=========================
@@ -759,7 +836,7 @@ def advection_upwind_fixe(v,T,kurant,h,n,order=1):
     t=0
     if order==1:
         tau=kurant*h
-        while t<T:
+        while t<=T + 1e-10:  # Добавляем небольшой допуск для плавающей точки:
             t+=tau
             for i in range(1,n):
                 # print('i',i)
@@ -768,8 +845,6 @@ def advection_upwind_fixe(v,T,kurant,h,n,order=1):
             
             new_v.append(list(v1))
             v=copy.copy(v1) 
-
-
     
     else:
         raise 'Неверный порядок алгоритма'
@@ -785,7 +860,7 @@ def generate_data_fixe(generate_flg,v,T,L,kurant,h,n,CUSTOM_TAU=None,save_flg=Fa
     else:
         tau=CUSTOM_TAU
 
-    time_lst=[i for i in np.arange(0,T,tau)] #FIRST FIX T->T+tau
+    time_lst=[i for i in np.arange(0,T+tau,tau)] #FIRST FIX T->T+tau
     if generate_flg:
         print('Генерация данных')
         v_fact=advection_upwind_fixe(v,T,kurant,h,n)[0]
