@@ -419,7 +419,10 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
               m,
               has_backward,
               method,
-              decay_const
+              decay_const,
+              verbose=False,
+              verbose_step=100,
+              continue_fitting=None
              ):
     
     v_train = torch.tensor(v_coarse_train.T, requires_grad=True, dtype=torch.float, device=device)
@@ -493,6 +496,16 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
 
         if epoch > 15_000:
             scheduler.step()
+
+        if verbose==True:
+            if continue_fitting!=None:
+                if (continue_fitting[1]+epoch)%verbose_step==0:
+                    print(fr'Веса после {continue_fitting[1]+epoch} эпохи:')
+                    print(W)
+            else:
+                if (epoch)%verbose_step==0:
+                    print(fr'Веса после {epoch} эпохи:')
+                    print(W)
 
         pbar.set_postfix(loss=round(loss.item(), 7))
 
