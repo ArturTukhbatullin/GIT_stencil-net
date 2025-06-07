@@ -1042,7 +1042,9 @@ def make_subplot_graphs_2d(NN_sim, v_coarse, x_sim, T_sim, T, dtc, n,
                         vmax_diff=1e-05,
                         save_flg=False,
                         save_path='/.',
-                        save_name='SUBPLOT'):
+                        save_name='SUBPLOT',
+                        n_xticks=2,
+                        shrink=0.5):
     """
     Строит графики на сетке 2x2 для заданных данных.
 
@@ -1057,13 +1059,64 @@ def make_subplot_graphs_2d(NN_sim, v_coarse, x_sim, T_sim, T, dtc, n,
     - nx: количество строк в сетке (по умолчанию 2).
     - ny: количество столбцов в сетке (по умолчанию 2).
     """
+    # time_lst = [int(i) for i in np.linspace(0, T_sim - 1, n)]
+    # n_times=len(time_lst)
+    # fact_time = np.round(np.arange(0, T + dtc, dtc), 4)
+
+    # # Создаем фигуру с подграфиками
+    # n_times = len(time_lst)
+    # fig, axes = plt.subplots(n_times, 3, figsize=(figsize[0], figsize[1]*n_times))  # 3 столбца: точное, численное, разность
+    # fig.suptitle("Сравнение точного и численного решений", fontsize=1)
+
+    # # Минимальное и максимальное значения для цветовой шкалы (чтобы графики были согласованы)
+    # vmin_exact = -1.5
+    # vmax_exact = 1.5
+
+    # for i, t in enumerate(time_lst):
+    #     # Вычисляем решения
+    #     exact = linearization_inverse(v_coarse[:,t])
+    #     numerical = linearization_inverse(NN_sim[:,t])
+    #     difference = numerical - exact
+
+    #     shrink = 0.8 #0.1
+    #     # Точное решение
+    #     ax = axes[i, 0]
+    #     im = ax.imshow(exact, cmap='coolwarm', origin='upper', vmin=vmin_exact, vmax=vmax_exact) #, extent=[0, 1, 0, 1]
+    #     ax.set_title(f"Точное решение, t = {fact_time[t]}")
+    #     fig.colorbar(im, ax=ax,shrink=shrink)
+
+    #     # Численное решение
+    #     ax = axes[i, 1]
+    #     im = ax.imshow(numerical, cmap='coolwarm', origin='upper', vmin=vmin_exact, vmax=vmax_exact)
+    #     ax.set_title(f"STENCIL-NET решение, t = {fact_time[t]}")
+    #     fig.colorbar(im, ax=ax,shrink=shrink)
+
+    #     # Разность (ошибка)
+    #     ax = axes[i, 2]
+    #     im = ax.imshow(difference, cmap='coolwarm', origin='upper', vmin=vmin_diff, vmax=vmax_diff)
+    #     ax.set_title(f"Разность, t = {fact_time[t]}")
+    #     cbar=fig.colorbar(im, ax=ax,shrink=shrink )
+
+    # plt.tight_layout()
+
+    # if save_flg:
+    #     plt.savefig(save_path+save_name+'.png')
+
+    # plt.show()
+
     time_lst = [int(i) for i in np.linspace(0, T_sim - 1, n)]
     n_times=len(time_lst)
     fact_time = np.round(np.arange(0, T + dtc, dtc), 4)
 
+    temp_n=int(np.sqrt(len(x_sim)))
+    pre_xticks=np.arange(0,temp_n,1)[0::n_xticks]
+    after_xticks=np.round(np.linspace(0,1,temp_n)[0::n_xticks],1)
+    print(pre_xticks,len(pre_xticks))
+    print(after_xticks,len(after_xticks))
+
     # Создаем фигуру с подграфиками
     n_times = len(time_lst)
-    fig, axes = plt.subplots(n_times, 3, figsize=(figsize[0], figsize[1]*n_times))  # 3 столбца: точное, численное, разность
+    fig, axes = plt.subplots(n_times, 3, figsize=(figsize[0], figsize[1]*n_times),dpi=400)  # 3 столбца: точное, численное, разность
     fig.suptitle("Сравнение точного и численного решений", fontsize=1)
 
     # Минимальное и максимальное значения для цветовой шкалы (чтобы графики были согласованы)
@@ -1076,24 +1129,35 @@ def make_subplot_graphs_2d(NN_sim, v_coarse, x_sim, T_sim, T, dtc, n,
         numerical = linearization_inverse(NN_sim[:,t])
         difference = numerical - exact
 
-        shrink = 0.8 #0.1
         # Точное решение
         ax = axes[i, 0]
         im = ax.imshow(exact, cmap='coolwarm', origin='upper', vmin=vmin_exact, vmax=vmax_exact) #, extent=[0, 1, 0, 1]
+        ax.set_xticks(pre_xticks)
+        ax.set_xticklabels(after_xticks)
+        ax.set_yticks(pre_xticks)
+        ax.set_yticklabels(after_xticks)
         ax.set_title(f"Точное решение, t = {fact_time[t]}")
         fig.colorbar(im, ax=ax,shrink=shrink)
 
         # Численное решение
         ax = axes[i, 1]
         im = ax.imshow(numerical, cmap='coolwarm', origin='upper', vmin=vmin_exact, vmax=vmax_exact)
+        ax.set_xticks(pre_xticks)
+        ax.set_xticklabels(after_xticks)
+        ax.set_yticks(pre_xticks)
+        ax.set_yticklabels(after_xticks)
         ax.set_title(f"STENCIL-NET решение, t = {fact_time[t]}")
         fig.colorbar(im, ax=ax,shrink=shrink)
 
         # Разность (ошибка)
         ax = axes[i, 2]
         im = ax.imshow(difference, cmap='coolwarm', origin='upper', vmin=vmin_diff, vmax=vmax_diff)
+        ax.set_xticks(pre_xticks)
+        ax.set_xticklabels(after_xticks)
+        ax.set_yticks(pre_xticks)
+        ax.set_yticklabels(after_xticks)
         ax.set_title(f"Разность, t = {fact_time[t]}")
-        cbar=fig.colorbar(im, ax=ax,shrink=shrink )
+        fig.colorbar(im, ax=ax,shrink=shrink )
 
     plt.tight_layout()
 
@@ -1103,6 +1167,8 @@ def make_subplot_graphs_2d(NN_sim, v_coarse, x_sim, T_sim, T, dtc, n,
     plt.show()
 
 def metric_by_time(NN_sim,v_coarse,T,dtc,ymax=None,
+                   figsize=(7,6),
+                   n_xticks=2,
                    save_flg=False,
                    save_path='./',
                    save_name='MAE_by_time'
@@ -1114,14 +1180,29 @@ def metric_by_time(NN_sim,v_coarse,T,dtc,ymax=None,
 
     assert len(fact_time)==len(mae),fr'{len(fact_time)}__{len(mae)}__shapes'
 
-    
+    # plt.plot(fact_time,mae,'-*')
+    # if ymax!=None:
+    #     plt.ylim([-0.2,ymax])
+    # plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
+    # plt.grid()
+    # plt.ylabel('MAE')
+    # plt.xlabel('t')
 
-    plt.plot(fact_time,mae,'-*')
-    if ymax!=None:
-        plt.ylim([-0.2,ymax])
-    plt.grid()
-    plt.ylabel('MAE')
+    pre_x=[i for i in range(v_coarse.shape[1])]
+    fact_time=np.round(np.arange(0,T+dtc,dtc),3)
+    # err=np.abs(v_coarse-NN_sim)
+    # mae_list=[err[:,i].mean() for i in range(err.shape[1])]
+    mae_list=[np.mean(np.abs(NN_sim[:,t]-v_coarse[:,t])) for t in range(len(v_coarse[0,:]))]
+    plt.figure(figsize=figsize)
+    plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
+    plt.plot(mae_list,'-*')
+    plt.xticks(pre_x[0::n_xticks],fact_time[0::n_xticks])
+    plt.xticks(rotation=70)
+    # plt.xticks(fact_time[1::2])
     plt.xlabel('t')
+    plt.ylabel('MAE')
+    plt.legend(['train_test_split','MAE'])
+    plt.grid()
 
     if save_flg:
         plt.savefig(save_path+save_name+'.png')
