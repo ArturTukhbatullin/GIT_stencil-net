@@ -31,11 +31,11 @@ def forward_rk1_error(net, target, dt, m, wd, fc=None, fc_0p5=None, fc_p1=None):
     p_old  = pred[0:-m,:].clone()
     
     for j in range(m-1):
-        p_new=p_old+dt*net(p_old)
+        p_new=p_old+dt*net(p_old) + dt * fc[j:-m+j,:]
         res   = res + wd[j+1]*((target[j+1:-m+j+1,:] - (p_new ))**2) #+ noise[j+1:-m+j+1,:]
         p_old=p_new
     
-    p_new=p_old+dt*net(p_old)
+    p_new=p_old+dt*(net(p_old)+ fc[j:-m+j,:])
     res   = res + wd[m]*((target[m:,:] - (p_new ))**2) #+ noise[j+1:-m+j+1,:]
     
     return torch.mean(res)
@@ -70,11 +70,11 @@ def backward_rk1_error(net, target, dt, m, wd, fc=None, fc_0m5=None, fc_m1=None)
     res    = torch.zeros_like(pred[m:,:])
     p_old  = pred[m:,:].clone()
     
-    p_new=p_old-dt*net(p_old)
+    p_new=p_old-dt*(net(p_old)+ fc[m:,:])
     res   = res + wd[1]*((target[m-1:-1,:] - (p_new ))**2) # +noise
     p_old = p_new
     for j in range(1,m):
-        p_new=p_old-dt*net(p_old)
+        p_new=p_old-dt*(net(p_old)+ fc[m-j:-j,:])
         res   = res + wd[j+1]*((target[m-(j+1):-(j+1),:] - (p_new ))**2) #+ noise[m-(j+1):-(j+1),:]
         p_old = p_new
         

@@ -139,7 +139,8 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
               m,
               has_backward,
               method,
-              decay_const
+              decay_const,
+              force_terms=[None,None,None,None,None] #fc, fc_0p5,fc_p1,fc_0m5,fc_m1
              ):
     
     v_train = torch.tensor(v_coarse_train.T, requires_grad=True, dtype=torch.float, device=device)
@@ -163,7 +164,7 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
     output_weights = [decay_const**j for j in range(m+1)] 
     wd = torch.tensor(output_weights, dtype=torch.float32, device=device)
     
-    def temp_zero_generator(*params):
+    def temp_zero_generator(*kwargs,fc=None,fc_0m5=None,fc_m1=None):
         return torch.zeros(1)[0]
 
     if method=='RK3':
@@ -183,14 +184,21 @@ def train_net(MLPConv,v_coarse_train,epochs,dtc,
         raise 'method error'
 
 
+    fc=force_terms[0]
+    fc_0p5=force_terms[1]
+    fc_p1=force_terms[2]
+    fc_0m5=force_terms[3]
+    fc_m1=force_terms[4]
+    
+
     loss_lst=[]
     pbar = tqdm(range(epochs))
     for epoch in pbar:
         optimizer.zero_grad()
 
         # compute forward and backward prediction errors
-        fwd=fwd_func(net, v_train, dtc, m, wd)
-        bwd=bwd_func(net, v_train, dtc, m, wd)
+        fwd=fwd_func(net, v_train, dtc, m, wd,fc=fc,fc_0p5=fc_0p5,fc_p1=fc_p1)
+        bwd=bwd_func(net, v_train, dtc, m, wd,fc=fc,fc_0m5=fc_0m5,fc_m1=fc_m1)
 
         # compute norm of weights
         res_w = 0
@@ -274,6 +282,140 @@ def make_simulation(net,v_coarse,L,Lxc,dtc,method='RK3'):
         
     return NN_sim,T_sim,x_sim
 
+
+def make_simulation_forcing_old(net,v_coarse,L,Lxc,dtc,\
+                            A,phi,N,w,l,method='RK3'):
+    Lx_sim=v_coarse.shape[0]
+    x_sim  = np.linspace(0,L,Lx_sim)
+    dxs    = x_sim[1] - x_sim[0]
+    dts    = dtc
+    T_sim = v_coarse.shape[1]
+
+    NN_sim   = np.zeros((Lx_sim,T_sim))
+    phase_NN = np.zeros((Lx_sim,T_sim))
+
+    # NN_sim[:,0] = np.exp(-(x_sim-3)**2)
+    NN_sim[:,0]=v_coarse[:,0]
+
+    zf   = 0
+    time = 0
+    print(method)
+    for j in tqdm(range(0,T_sim-1)):
+        if method=='RK3':
+            tensor = NN_sim[:,j].reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+
+            forcing = np.zeros((Lx_sim,))
+            for k in range(0, N):
+                forcing = forcing + A[k]*np.sin(w[k]*time + 2.0*np.pi*l[k]*(x_sim/L) + phi[k])
+
+            ##my
+            k1   =  dts*net(torch_tensor).cpu().data.numpy() + dts*forcing
+            temp =  NN_sim[:,j] + 0.5*k1
+
+            tensor = temp.reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+
+            forcing = np.zeros((Lx_sim,))
+            for k in range(0, N):
+                forcing = forcing + A[k]*np.sin(w[k]*(time+0.5*dts) + 2.0*np.pi*l[k]*(x_sim/L) + phi[k])
+
+            k2   =  dts*net(torch_tensor).cpu().data.numpy() + dts*forcing
+            temp =  NN_sim[:,j] - k1 + 2.0*k2
+
+            tensor = temp.reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+
+            forcing = np.zeros((Lx_sim,))
+            for k in range(0, N):
+                forcing = forcing + A[k]*np.sin(w[k]*(time+dts) + 2.0*np.pi*l[k]*(x_sim/L) + phi[k])
+
+            k3   =  dts*net(torch_tensor).cpu().data.numpy() + dts*forcing
+
+            NN_sim[:,j+1] = NN_sim[:,j] + (1./6.)*(k1 + 4.0*k2 + k3)
+
+            time = time + dts
+
+        elif method=='E1':
+            tensor = NN_sim[:,j].reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+
+            NN_sim[:,j+1] = NN_sim[:,j]+dts*net(torch_tensor).cpu().data.numpy()+ dts*forcing
+
+            time = time + dts
+
+        else:
+            raise 'method error'
+        
+    return NN_sim,T_sim,x_sim
+
+
+def make_simulation_forcing(net,v_coarse,L,Lxc,dtc,\
+                            A,phi,N,w,l,method='RK3'):
+    Lx_sim=v_coarse.shape[0]
+    x_sim  = np.linspace(0,L,Lx_sim)
+    dxs    = x_sim[1] - x_sim[0]
+    dts    = dtc
+    T_sim = v_coarse.shape[1]
+
+    NN_sim   = np.zeros((Lx_sim,T_sim))
+    phase_NN = np.zeros((Lx_sim,T_sim))
+
+    # NN_sim[:,0] = np.exp(-(x_sim-3)**2)
+    NN_sim[:,0]=v_coarse[:,0]
+
+    zf   = 0
+    time = 0
+    print(method)
+    for j in tqdm(range(0,T_sim-1)):
+        if method=='RK3':
+            tensor = NN_sim[:,j].reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+            
+            forcing = np.zeros((Lx_sim,))
+            for k in range(0, N):
+                forcing = forcing + A[k]*np.sin(w[k]*time + 2.0*np.pi*l[k]*(x_sim/L) + phi[k])
+            
+            phase_NN[:,j] = net(torch_tensor).cpu().data.numpy()
+            k1   =  dts*phase_NN[:,j] + dts*forcing
+            temp =  NN_sim[:,j] + 0.5*k1 
+            
+            tensor = temp.reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+            
+            forcing = np.zeros((Lx_sim,))
+            for k in range(0, N):
+                forcing = forcing + A[k]*np.sin(w[k]*(time+0.5*dts) + 2.0*np.pi*l[k]*(x_sim/L) + phi[k])
+
+            k2   =  dts*net(torch_tensor).cpu().data.numpy() + dts*forcing
+            temp =  NN_sim[:,j] - k1 + 2.0*k2
+            
+            tensor = temp.reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+            
+            forcing = np.zeros((Lx_sim,))
+            for k in range(0, N):
+                forcing = forcing + A[k]*np.sin(w[k]*(time+dts) + 2.0*np.pi*l[k]*(x_sim/L) + phi[k])
+
+            k3   =  dts*net(torch_tensor).cpu().data.numpy() + dts*forcing
+            
+            NN_sim[:,j+1] = NN_sim[:,j] + (1./6.)*(k1 + 4.0*k2 + k3)
+            
+            time = time + dts
+
+        elif method=='E1':
+            tensor = NN_sim[:,j].reshape(1,Lxc)
+            torch_tensor = torch.tensor(tensor,dtype=torch.float,device=device)
+
+            NN_sim[:,j+1] = NN_sim[:,j]+dts*net(torch_tensor).cpu().data.numpy()+ dts*forcing
+
+            time = time + dts
+
+        else:
+            raise 'method error'
+        
+    return NN_sim,T_sim,x_sim
+
     
 def plot_err_and_components_of_err(loss_lst:np.array):
     '''График loss и слагаемых из формулы loss'''
@@ -293,18 +435,8 @@ def view_train_test_graph(x_sim,v_coarse_train,v_coarse_test):
     plt.legend()
     plt.grid()
 
-# def view_results_old(T_sim,x_sim,NN_sim,v_coarse,n=5):
-#     time_lst=[int(i) for i in np.linspace(0,T_sim-1,n)]
-#     # time_lst=np.arange(0,T_sim-1,step)
-#     for time in time_lst:
-#         plt.figure(figsize=(7,6))
-#         plt.title(fr'time={time}')
-#         plt.plot(x_sim,NN_sim[:,time],'-*',color='blue',label='STENCIL-NET')
-#         plt.plot(x_sim,v_coarse[:,time],'-*',color='red', label='FACT')
-#         plt.grid()
-#         plt.legend()
 
-def view_results(T_sim,x_sim,NN_sim,v_coarse,T,dtc,n=5):
+def view_results_old(T_sim,x_sim,NN_sim,v_coarse,T,dtc,n=5):
     time_lst=[int(i) for i in np.linspace(0,T_sim-1,n)]
     fact_time=np.round(np.arange(0,T+dtc,dtc),4)
     for t in time_lst:
@@ -316,51 +448,86 @@ def view_results(T_sim,x_sim,NN_sim,v_coarse,T,dtc,n=5):
         plt.legend()
 
 
-def view_result_imshow(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2):
+def view_result_imshow(NN_sim, v_coarse, T, dtc, L, dxc,\
+     figsize=(7,6), n_xticks=2,\
+     n_yticks=2,
+     save_path='./',
+     save_name='imshow_default_name',
+     fix_colorbar_axes=False, #TODO не работает
+     view_flg=True):
     
-    pre_x=[i for i in range(v_coarse.shape[1])]
-    pre_y=[i for i in range(v_coarse.shape[0])]
-    fact_time=np.round(np.arange(0,T+dtc,dtc),3)
-    fact_x=np.round(np.arange(0,L+dxc,dxc),3)
+    pre_x = [i for i in range(v_coarse.shape[1])]
+    pre_y = [i for i in range(v_coarse.shape[0])]
+    fact_time = np.round(np.arange(0, T + dtc, dtc), 3)
+    fact_x = np.round(np.arange(0, L + dxc, dxc), 3)
+
+    data_min=min(min(v_coarse[:,0]),min(NN_sim[:,0]))
+    data_max=max(min(v_coarse[:,-1]),min(NN_sim[:,-1]))
+    
+
+    # Проверка на соответствие длины меток и позиций
+    if len(pre_x[1::n_xticks]) != len(fact_time[1::n_xticks]):
+        raise ValueError(f"Количество позиций ({len(pre_x[1::n_xticks])}) не совпадает с количеством меток ({len(fact_time[1::n_xticks])}). Убедитесь, что n_xticks корректно задан.")
 
     plt.figure(figsize=figsize)
-    plt.title("Real data")
-    plt1=plt.imshow(v_coarse,cmap='seismic', aspect=1.8)
-    plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
-    plt.colorbar(orientation='horizontal')
+    plt.title("Динамика исходных данных")
+    plt1 = plt.imshow(v_coarse, cmap='seismic', aspect=1.8)
+    plt.axvline(x=int(train_split * v_coarse.shape[1]), color='yellow', linestyle='-', linewidth=2)
+    cbar1=plt.colorbar(orientation='horizontal')
+    if fix_colorbar_axes:
+        cbar1.set_clim(vmin=data_min, vmax=data_max)  # Устанавливаем пределы для colorbar
     plt.xlabel('t')
     plt.ylabel('x')
-    plt.xticks(pre_x[1::n_xticks],fact_time[1::n_xticks])
-    plt.yticks(pre_y,fact_x)
+    plt.xticks(pre_x[1::n_xticks], fact_time[1::n_xticks])
+    plt.yticks(pre_y[1::n_yticks], fact_x[1::n_yticks])
     plt.xticks(rotation=70)
-    plt.show()
+    if save_path!=None and save_name!=None:
+            plt.savefig(save_path+'/'+save_name+fr'_1'+'.png')
+    if view_flg:
+        plt.show()
+    else:
+        plt.close()
 
     plt.figure(figsize=figsize)
-    plt.title("Net data")
-    plt.imshow(NN_sim,cmap='seismic', aspect=1.8)
-    plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
-    plt.colorbar(orientation='horizontal')
+    plt.title("Динамика данных STENCIL_NET")
+    plt.imshow(NN_sim, cmap='seismic', aspect=1.8)
+    plt.axvline(x=int(train_split * v_coarse.shape[1]), color='yellow', linestyle='-', linewidth=2)
+    cbar2=plt.colorbar(orientation='horizontal')
+    if fix_colorbar_axes:
+        cbar2.set_clim(vmin=data_min, vmax=data_max)  # Устанавливаем пределы для colorbar
     plt.xlabel('t')
     plt.ylabel('x')
-    plt.xticks(pre_x[1::n_xticks],fact_time[1::n_xticks])
-    plt.yticks(pre_y,fact_x)
+    plt.xticks(pre_x[1::n_xticks], fact_time[1::n_xticks])
+    plt.yticks(pre_y[1::n_yticks], fact_x[1::n_yticks])
     plt.xticks(rotation=70)
-    plt.show()
+    if save_path!=None and save_name!=None:
+            plt.savefig(save_path+'/'+save_name+fr'_2'+'.png')
+    if view_flg:
+        plt.show()
+    else:
+        plt.close()
 
     plt.figure(figsize=figsize)
     plt.title("Error data")
-    plt.imshow(v_coarse-NN_sim,cmap='seismic', aspect=1.8)
-    plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2)
-    plt.colorbar(orientation='horizontal')
+    plt.imshow(v_coarse - NN_sim, cmap='seismic', aspect=1.8)
+    plt.axvline(x=int(train_split * v_coarse.shape[1]), color='yellow', linestyle='-', linewidth=2)
+    cbar3=plt.colorbar(orientation='horizontal')
+    if fix_colorbar_axes:
+        cbar3.set_clim(vmin=data_min, vmax=data_max)  # Устанавливаем пределы для colorbar
     plt.xlabel('t')
     plt.ylabel('x')
-    plt.xticks(pre_x[1::n_xticks],fact_time[1::n_xticks])
-    plt.yticks(pre_y,fact_x)
+    plt.xticks(pre_x[1::n_xticks], fact_time[1::n_xticks])
+    plt.yticks(pre_y[1::n_yticks], fact_x[1::n_yticks])
     plt.xticks(rotation=70)
-    plt.show()
+    if save_path!=None and save_name!=None:
+            plt.savefig(save_path+'/'+save_name+fr'_3'+'.png')
+    if view_flg:
+        plt.show()
+    else:
+        plt.close()
         
 
-def view_result_metric(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2):
+def view_result_metric_old(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2):
     pre_x=[i for i in range(v_coarse.shape[1])]
     fact_time=np.round(np.arange(0,T+dtc,dtc),3)
     err=np.abs(v_coarse-NN_sim)
@@ -373,6 +540,68 @@ def view_result_metric(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2):
     # plt.xticks(fact_time[1::2])
     plt.xlabel('t')
     plt.grid()
+    plt.show()
+
+
+def view_results(T_sim,x_sim,NN_sim,v_coarse,T,dtc,
+    n=5,
+    epochs="",
+    fix_axes=False,
+    save_path=None,
+    save_name=None,
+    view_flag=True
+    ):
+    time_lst=[int(i) for i in np.linspace(0,T_sim-1,n)]
+    fact_time=np.round(np.arange(0,T+dtc,dtc),4)
+    for t in time_lst:
+        plt.figure(figsize=(6,4))
+        plt.title(fr'Epochs_{epochs}|time={fact_time[t]}')
+        plt.plot(x_sim,NN_sim[:,t],'-*',color='blue',label='STENCIL-NET')
+        plt.plot(x_sim,v_coarse[:,t],'-*',color='red', label='FACT')
+        if fix_axes:
+            plt.ylim([min(v_coarse[:,0])-0.1,max(v_coarse[:,0])+0.1])
+        plt.grid()
+        plt.xlabel('x')
+        plt.ylabel('T')
+        plt.legend()
+        if save_path!=None and save_name!=None:
+            plt.savefig(save_path+'/'+save_name+fr'_t={fact_time[t]}'+'.png')
+        if view_flag:
+            plt.show()
+        else:
+            plt.close()
+
+
+def make_gif(folder,epochs):
+    
+    import imageio
+    import os
+    files = os.listdir(folder)
+    images = [folder+i for i in files if str(epochs) in i and 'Metric' not in i and 'Imshow' not in i] 
+    with imageio.get_writer(folder+fr'gif/Results_epoch={epochs}.gif', mode='I',fps=5) as writer:
+        for img in images:
+            writer.append_data(imageio.imread(img))  # Добавление каждого изображения в отдельности
+
+def view_result_metric(NN_sim,v_coarse,T,dtc,L,dxc,figsize=(7,6),n_xticks=2,
+    save_path=None,
+    save_name=None,
+    ):
+    pre_x=[i for i in range(v_coarse.shape[1])]
+    fact_time=np.round(np.arange(0,T+dtc,dtc),3)
+    err=np.abs(v_coarse-NN_sim)
+    mae_list=[err[:,i].mean() for i in range(err.shape[1])]
+    plt.figure(figsize=figsize)
+    plt.axvline(x = int(train_split*v_coarse.shape[1]), color = 'yellow', linestyle = '-',linewidth=2,label='train_test_split')
+    plt.plot(mae_list,'-*',label='MAE')
+    plt.xticks(pre_x[0::n_xticks],fact_time[0::n_xticks])
+    plt.xticks(rotation=70)
+    # plt.xticks(fact_time[1::2])
+    plt.ylabel('MAE')
+    plt.xlabel('t')
+    plt.legend()
+    plt.grid()
+    if save_path!=None and save_name!=None:
+        plt.savefig(save_path+'/'+save_name+'.png')
     plt.show()
 
 # ------------------------end PostProcess-----------------------

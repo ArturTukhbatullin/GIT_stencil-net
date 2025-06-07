@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import os
-from tqdm import tqdm_notebook as tqdm
+from tqdm import tqdm
 
 def dflux(u):
     return u
@@ -15,19 +15,26 @@ def Kdv_flux(u):
 def dKdv_flux(u):
     return 6.0*u
 
-def WENO_scheme(w,dx,sol):
+def WENO_scheme(w,dx,sol,
+                bc_type='periodic',bc_values=None):
     """Computation of WENO scheme."""
+    
+    if bc_type == 'dirichlet' and bc_values!=None:
+        # Устанавливаем граничные условия Дирихле
+        w[0] = bc_values[0]
+        w[-1] = bc_values[1]
+    
     if(sol=='burgers' or sol=='KS'):
         a=max(abs(dflux(w))); v=0.5*(flux(w)+a*w); u=np.roll(0.5*(flux(w)-a*w),[0,-1]);  #flux splitting
     if(sol=='kdv'):
-        a=max(abs(dKdv_flux(w))); v=0.5*(Kdv_flux(w)+a*w); u=np.roll(0.5*(Kdv_flux(w)-a*w),[0,-1]);
-    
+        a=max(abs(dKdv_flux(w))); v=0.5*(Kdv_flux(w)+a*w); u=np.roll(0.5*(Kdv_flux(w)-a*w),[0,-1]);    
+
     vmm = np.roll(v,[0,2]);  # w[i-2]
     vm  = np.roll(v,[0,1]);  # w[i-1]
     vp  = np.roll(v,[0,-1]); # w[i+1]
     vpp = np.roll(v,[0,-2]); # w[i+2]
     
-    # Polynomials
+    # Polynomials (три шаблона (stencils) для аппроксимации)
     # S0 - {vmm, vm, v}, S1 = {vm,v,vp}, S2 = {v,vp,vpp}
     p0n = (2.*vmm - 7.*vm + 11.*v)/6.;
     p1n = ( -vm  + 5.*v  + 2.*vp)/6.;
@@ -82,7 +89,7 @@ def WENO_scheme(w,dx,sol):
     # ((f+_{i+0.5} + f-_{i+0.5}) - (f+_{i-0.5} + f-_{i-0.5}))/(dx) -- flux approximation
     return (Rplus + Rminus - np.roll(Rplus,[0,1]) - np.roll(Rminus,[0,1]))/(dx)
 
-def burgers_simulation(Tsim, Lx, x, D, dt, A, w, phi, l, N, L):
+def burgers_simulation(Tsim, Lx, x, D, dt, A, w, phi, l, N, L,bc_type='periodic',bc_values=None):
     """
     Computes simulation data for Forced-Burgers equation.
     
@@ -113,7 +120,8 @@ def burgers_simulation(Tsim, Lx, x, D, dt, A, w, phi, l, N, L):
         um = np.roll(u_EN5_rk3[:,j],[0,1])
         up = np.roll(u_EN5_rk3[:,j],[0,-1])
         diff = D*(up - 2.0*u_EN5_rk3[:,j] + um)/(dx*dx)
-        phase_uEN5[:,j] = diff - WENO_scheme(u_EN5_rk3[:,j],dx,sol='burgers')
+        phase_uEN5[:,j] = diff - WENO_scheme(u_EN5_rk3[:,j],dx,sol='burgers',
+                                             bc_type=bc_type,bc_values=bc_values)
         k1 = dt*(phase_uEN5[:,j]) + dt*forcing
         temp = u_EN5_rk3[:,j] + 0.5*k1
 
@@ -125,7 +133,8 @@ def burgers_simulation(Tsim, Lx, x, D, dt, A, w, phi, l, N, L):
         up = np.roll(temp,[0,-1])
         diff = D*(up - 2.0*temp + um)/(dx*dx)
 
-        k2 = dt*diff - dt*WENO_scheme(temp,dx,sol='burgers') + dt*forcing
+        k2 = dt*diff - dt*WENO_scheme(temp,dx,sol='burgers',
+                                             bc_type=bc_type,bc_values=bc_values) + dt*forcing
         temp = u_EN5_rk3[:,j] - k1 + 2.0*k2
 
         forcing = np.zeros((Lx,))
@@ -136,12 +145,118 @@ def burgers_simulation(Tsim, Lx, x, D, dt, A, w, phi, l, N, L):
         up = np.roll(temp,[0,-1])
         diff = D*(up - 2.0*temp + um)/(dx*dx)
 
-        k3 = dt*diff - dt*WENO_scheme(temp,dx,sol='burgers') + dt*forcing
+        k3 = dt*diff - dt*WENO_scheme(temp,dx,sol='burgers',
+                                             bc_type=bc_type,bc_values=bc_values) + dt*forcing
         u_EN5_rk3[:,j+1] = u_EN5_rk3[:,j] + (1./6.)*(k1 + 4.0*k2 + k3)
 
         time = time + dt
     
     return u_EN5_rk3, phase_uEN5
+
+def burgers_simulation_e1(Tsim, Lx, x, D, dt, A, w, phi, l, N, L,bc_type='periodic',bc_values=None):
+    """
+    MY_METHOD
+    """
+    """
+    Computes simulation data for Forced-Burgers equation.
+    
+    Keyword arguments:
+    Tsim -- number of timesteps to be simulated
+    Lx -- number spatial grid points
+    x -- spatial grid points
+    D -- diffusion constant
+    dt -- length of timesteps
+    A, w, phi, l, N, L -- parameters forcing terms
+    """
+    dx = x[1] - x[0]
+    N  = len(A)
+                                                                                      
+    u_euler  = np.zeros((Lx,Tsim))
+    phase_uEuler = np.zeros((Lx,Tsim))
+    
+    u_euler[:,0] = np.exp(-(x-3)**2)
+                                                                                      
+    time = 0
+    zf   = 1.0
+    for j in tqdm(range(0,Tsim-1)):
+        # computing forcing for burgers
+        forcing = np.zeros((Lx,))
+        for k in range(0, N):
+            forcing = zf*forcing + zf*A[k]*np.sin(w[k]*time + 2.0*np.pi*l[k]*(x/L) + phi[k])
+
+        if bc_type=='dirichlet' and bc_values!=None:
+            u_euler[0,j],u_euler[-1,j] = bc_values[0],bc_values[-1]
+
+        um = np.roll(u_euler[:,j],[0,1])
+        up = np.roll(u_euler[:,j],[0,-1])
+        diff = D*(up - 2.0*u_euler[:,j] + um)/(dx*dx)
+        
+        # WENO scheme for the convective term
+        conv = WENO_scheme(u_euler[:, j], dx, sol='burgers')
+
+        # Right-hand side of the equation
+        phase_uEuler[:, j] = diff - conv
+
+        # Euler's method update
+        u_euler[:, j + 1] = u_euler[:, j] + dt * (phase_uEuler[:, j] + forcing)
+
+        time = time + dt
+    
+    return u_euler, phase_uEuler
+
+def burgers_simulation_e1_CentralDifference(Tsim, Lx, x, D, dt, A, w, phi, l, N, L,bc_type='periodic',bc_values=None):
+    """
+    MY_METHOD
+    """
+    """
+    Computes simulation data for Forced-Burgers equation.
+    
+    Keyword arguments:
+    Tsim -- number of timesteps to be simulated
+    Lx -- number spatial grid points
+    x -- spatial grid points
+    D -- diffusion constant
+    dt -- length of timesteps
+    A, w, phi, l, N, L -- parameters forcing terms
+    """
+    dx = x[1] - x[0]
+    N  = len(A)
+                                                                                      
+    u_euler  = np.zeros((Lx,Tsim))
+    phase_uEuler = np.zeros((Lx,Tsim))
+    
+    u_euler[:,0] = np.exp(-(x-3)**2)
+
+    time = 0
+    zf   = 1.0
+    for j in tqdm(range(0,Tsim-1)):
+        # computing forcing for burgers
+        forcing = np.zeros((Lx,))
+        for k in range(0, N):
+            forcing = zf*forcing + zf*A[k]*np.sin(w[k]*time + 2.0*np.pi*l[k]*(x/L) + phi[k])
+
+        if bc_type=='dirichlet' and bc_values!=None:
+            u_euler[0,j],u_euler[-1,j] = bc_values[0],bc_values[-1]
+
+         # Diffusion term
+        um = np.roll(u_euler[:, j], [0, 1])
+        up = np.roll(u_euler[:, j], [0, -1])
+        diff = D * (up - 2.0 * u_euler[:, j] + um) / (dx * dx)
+
+        # Finite difference scheme for the nonlinear term d(u^2)/dx
+        # conv = nonlinear_term(u_euler[:, j], dx)
+        conv=u_euler[:,j]*(up-um)/2/dx
+
+        # Right-hand side of the equation
+        phase_uEuler[:, j] = diff - conv
+
+        # Euler's method update
+        u_euler[:, j + 1] = u_euler[:, j] + dt * (phase_uEuler[:, j] + forcing)
+
+        time = time + dt
+    
+    return u_euler, phase_uEuler
+
 
 def forcing_terms(A, w, phi, l, L, Lxc, T, Ltc, N, dtc):
     """Computes coarse forcing terms."""
@@ -181,6 +296,100 @@ def forcing_terms(A, w, phi, l, L, Lxc, T, Ltc, N, dtc):
         Fc_m1 = zf*Fc_m1 + zf*A[k]*np.sin(w[k]*tt + 2.0*np.pi*l[k]*(xx/L) + phi[k])
         
     return Fc, Fc_0p5, Fc_p1, Fc_0m5, Fc_m1
+
+def burgers_upwind(Tsim, Lx, x, D, dt, A, w, phi, l, N, L,bc_type='periodic',bc_values=None):
+
+    u  = np.zeros((Lx,Tsim))
+    u[:,0] = np.exp(-(x-3)**2)
+    dx = x[1] - x[0]
+
+    time=0
+    zf=1
+    for j in tqdm(range(0,Tsim-1)):
+
+
+        # computing forcing for burgers
+        forcing = np.zeros((Lx,))
+        for k in range(0, N):
+            forcing = zf*forcing + zf*A[k]*np.sin(w[k]*(time) + 2.0*np.pi*l[k]*(x/L) + phi[k])
+
+        ##--------------deepseek_v1--------------
+        # Применение метода upwind для конвективного члена
+        for i in range(1, Lx - 1):
+            if u[i, j] > 0:
+                # Если скорость положительная, используем разность "назад"
+                conv_term = u[i, j] * (u[i, j] - u[i - 1, j]) / dx
+                # conv_term = (u[i, j]**2 - u[i - 1, j]**2) / dx
+            else:
+                # Если скорость отрицательная, используем разность "вперёд"
+                conv_term = u[i, j] * (u[i + 1, j] - u[i, j]) / dx
+                # conv_term = (u[i + 1, j]**2 - u[i, j]**2) / dx
+
+            # Диффузионный член (центральная разность)
+            diff_term = D * (u[i + 1, j] - 2 * u[i, j] + u[i - 1, j]) / dx**2
+
+            # Обновление решения
+            u[i, j + 1] = u[i, j] - dt * conv_term + dt * diff_term + dt * forcing[i]
+
+        # Периодические граничные условия #todo
+        if bc_type=='periodic':
+            u[0, j + 1] = u[-2, j + 1]  # Левая граница
+            u[-1, j + 1] = u[1, j + 1]  # Правая граница
+
+        elif bc_type=='dirichlet' and bc_values!=None:
+            u[0, j + 1]=bc_values[0]
+            u[-1, j + 1]=bc_values[1]
+        
+
+        time = time + dt
+
+    return u
+
+
+def burgers_cd(Tsim, Lx, x, D, dt, A, w, phi, l, N, L,
+               bc_type='periodic',bc_values=None):
+
+    u  = np.zeros((Lx,Tsim))
+    u[:,0] = np.exp(-(x-3)**2)
+    dx = x[1] - x[0]
+
+    time=0
+    zf=1
+    for j in tqdm(range(0,Tsim-1)):
+        
+        # computing forcing for burgers
+        forcing = np.zeros((Lx,))
+        for k in range(0, N):
+            forcing = zf*forcing + zf*A[k]*np.sin(w[k]*(time) + 2.0*np.pi*l[k]*(x/L) + phi[k])
+
+        ##--------------my--------------
+        for i in range(1,Lx-1):
+            diff1_t=u[i,j]
+            # diff1_x=-dt/2/dx*u[i,j]*((u[i+1,j])-(u[i-1,j])) 
+            diff1_x=-dt/2/dx*((u[i+1,j])**2-(u[i-1,j])**2)
+            diff2_x=+D*dt/dx/dx*(u[i+1,j]-2*u[i,j]+u[i-1,j])
+            u[i,j+1]=(diff1_t
+                      +diff1_x
+                      +diff2_x
+                      +dt*forcing[i])
+        
+        # Периодические граничные условия #todo
+        if bc_type=='periodic':
+            u[0, j + 1] = u[-2, j + 1]  # Левая граница
+            u[-1, j + 1] = u[1, j + 1]  # Правая граница
+
+        elif bc_type=='dirichlet' and bc_values!=None:
+            u[0, j + 1]=bc_values[0]
+            u[-1, j + 1]=bc_values[1]
+
+        time = time + dt
+
+    print('Максимум от внешней силы',max(forcing))
+
+    u[0,:]=bc_values[0]
+    u[-1,:]=bc_values[1]
+
+    return u
 
 def noise_initialization(u_coarse_noise, lam):
     """
@@ -237,7 +446,7 @@ def load_simulation_model(s, t, nn, device):
     """
     for path in os.listdir("models/"):
         if "burgers" in path and "Lxc{}".format(s) in path and "Ltc{}".format(t) in path and "_{}_".format(nn) in path:
-            net = torch.load("models/" + path, map_location=device)
+            net = torch.load("models/" + path,weights_only=False, map_location=device)
             return net
         
     raise FileNotFoundError("No model for given configuration! Please check description of possible pretrained configurations.")
